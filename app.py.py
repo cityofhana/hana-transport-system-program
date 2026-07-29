@@ -80,7 +80,7 @@ def main():
         layout="wide"
     )
 
-    # 링크 공유자 전용 접속 비밀번호 인증
+    # 1단계: 링크 접속 인증 (비밀번호: 0924)
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
@@ -111,10 +111,35 @@ def main():
     st.title("🚍 하나자치시 대중교통 안내프로그램")
 
     st.sidebar.title("메뉴 선택")
+    
+    # 관리자 모드 세션 상태 관리
+    if "admin_authenticated" not in st.session_state:
+        st.session_state.admin_authenticated = False
+
     user_mode = st.sidebar.radio(
         "사용자 모드",
         ["이용자 모드 (노선도 조회)", "관리자 모드 (편집/관리)"]
     )
+
+    # 관리자 모드를 선택했을 때 추가 비밀번호(1596) 확인
+    if user_mode == "관리자 모드 (편집/관리)":
+        if not st.session_state.admin_authenticated:
+            st.subheader("🔐 관리자 모드 인증")
+            st.warning("관리자 모드에 접근하려면 관리자 비밀번호를 입력해야 합니다.")
+            
+            admin_pwd = st.text_input("관리자 비밀번호 입력", type="password", key="admin_pwd_input")
+            if st.button("관리자 로그인"):
+                if admin_pwd == "1596":
+                    st.session_state.admin_authenticated = True
+                    st.success("관리자 인증 성공!")
+                    st.rerun()
+                else:
+                    st.error("⚠️ 관리자 비밀번호가 올바르지 않습니다.")
+            return
+    else:
+        # 이용자 모드로 돌아가면 관리자 인증 상태를 풀고 싶다면 아래 주석을 해제하세요.
+        # st.session_state.admin_authenticated = False
+        pass
 
     if user_mode == "이용자 모드 (노선도 조회)":
         st.subheader("🎨 하나자치시 대중교통 노선도 조회")
