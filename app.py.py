@@ -80,7 +80,6 @@ def main():
         layout="wide"
     )
 
-    # 1단계: 링크 접속 인증 (비밀번호: 0924)
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
@@ -112,7 +111,6 @@ def main():
 
     st.sidebar.title("메뉴 선택")
     
-    # 관리자 모드 세션 상태 관리
     if "admin_authenticated" not in st.session_state:
         st.session_state.admin_authenticated = False
 
@@ -121,7 +119,6 @@ def main():
         ["이용자 모드 (노선도 조회)", "관리자 모드 (편집/관리)"]
     )
 
-    # 관리자 모드를 선택했을 때 추가 비밀번호(1596) 확인
     if user_mode == "관리자 모드 (편집/관리)":
         if not st.session_state.admin_authenticated:
             st.subheader("🔐 관리자 모드 인증")
@@ -136,10 +133,6 @@ def main():
                 else:
                     st.error("⚠️ 관리자 비밀번호가 올바르지 않습니다.")
             return
-    else:
-        # 이용자 모드로 돌아가면 관리자 인증 상태를 풀고 싶다면 아래 주석을 해제하세요.
-        # st.session_state.admin_authenticated = False
-        pass
 
     if user_mode == "이용자 모드 (노선도 조회)":
         st.subheader("🎨 하나자치시 대중교통 노선도 조회")
@@ -160,6 +153,18 @@ def main():
                     if not t_routes or not t_stations:
                         st.info(f"'{t_name}'에 등록된 노선 또는 정류장 데이터가 없습니다.")
                         continue
+
+                    # 노선 선택 필터 추가 (특정 노선만 강조 또는 단독 보기용)
+                    filter_option = st.radio(
+                        f"[{t_name}] 조회 방식 선택",
+                        ["전체 노선 보기"] + [f"'{r}' 노선만 집중 보기" for r in t_routes],
+                        horizontal=True,
+                        key=f"filter_{t_name}"
+                    )
+
+                    selected_focus_route = None
+                    if "만 집중 보기" in filter_option:
+                        selected_focus_route = filter_option.replace("'", "").replace(" 노선만 집중 보기", "")
 
                     with st.expander(f"📋 '{t_name}' 상세 노선 및 정류장 목록 보기"):
                         for r_name in t_routes:
@@ -193,18 +198,23 @@ def main():
                             route_colors[(t_name, r_name)] = colors[color_idx % len(colors)]
                             color_idx += 1
 
+                        # 범례 박스 생성
                         with dot.subgraph(name=f"cluster_legend_{t_name}") as box:
-                            box.attr(label="노선 정보", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname='Arial', fontsize='12', fontcolor='#333333')
+                            box.attr(label="노선 정보 (선택 가능)", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname='Arial', fontsize='12', fontcolor='#333333')
                             
                             prev_node = None
                             for (tr_name, r_name), color in route_colors.items():
                                 box_item_id = f"legend_box_{tr_name}_{r_name}"
+                                
+                                # 집중 보기 노선이 아닐 경우 범례 색상을 흐릿하게 처리
+                                box_color = color if (not selected_focus_route or selected_focus_route == r_name) else '#CCCCCC'
+                                
                                 box.node(
                                     box_item_id,
                                     label=f"  {r_name}  ",
                                     shape='box',
                                     style='filled',
-                                    fillcolor=color,
+                                    fillcolor=box_color,
                                     fontcolor='#ffffff',
                                     fontname='Arial',
                                     fontsize='11',
@@ -215,12 +225,23 @@ def main():
                                 prev_node = box_item_id
 
                         all_unique_stations = set()
-                        for s_list in t_stations.values():
+                        for (tr_name, r_name), s_list in t_stations.items():
+                            if selected_focus_route and r_name != selected_focus_route:
+                                continue
                             for s_name in s_list:
                                 all_unique_stations.add(s_name)
 
+                        # 집중 보기가 아닐 때는 모든 정류장 포함
+                        if not selected_focus_route:
+                            for s_list in t_stations.values():
+                                for s_name in s_list:
+                                    all_unique_stations.add(s_name)
+
                         for s_name in all_unique_stations:
                             r_set = station_to_routes.get(s_name, set())
+                            if selected_focus_route:
+                                r_set = {item for item in r_set if item[1] == selected_focus_route}
+                            
                             is_transfer = len(r_set) > 1
                             
                             dot.node(
@@ -235,6 +256,9 @@ def main():
                             )
 
                         for (tr_name, r_name), s_list in t_stations.items():
+                            if selected_focus_route and r_name != selected_focus_route:
+                                continue
+                                
                             r_color = route_colors.get((tr_name, r_name), '#000000')
                             
                             for i in range(len(s_list) - 1):
@@ -402,6 +426,23 @@ def main():
                                 st.warning("정류장 이름을 입력하세요.")
 
                     if current_stations:
+                        st.divider()
+                        st.subheader("✏️ 정류장 이름 변경")
+                        with st.form("edit_station_form"):
+                            edit_idx = st.selectbox("변경할 정류장 선택", range(len(current_stations)), format_func=lambda i: f"{i+1}. {current_stations[i]}", key="edit_idx_sel")
+                            new_station_name = st.text_input("새로운 정류장 이름 입력", value=current_stations[edit_idx])
+                            edit_submitted = st.form_submit_button("정류장 이름 변경")
+                            if edit_submitted:
+                                if new_station_name.strip():
+                                    old_name = current_stations[edit_idx]
+                                    changed_name = new_station_name.strip()
+                                    current_stations[edit_idx] = changed_name
+                                    save_data()
+                                    st.success(f"정류장 이름이 '{old_name}' 에서 '{changed_name}'(으)로 변경되었습니다.")
+                                    st.rerun()
+                                else:
+                                    st.warning("변경할 정류장 이름을 입력하세요.")
+
                         st.divider()
                         st.subheader("🗑️ 정류장 개별 삭제")
                         with st.form("del_station_form"):
