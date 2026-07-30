@@ -149,7 +149,6 @@ def main():
             with col_s1:
                 search_transport_type = st.selectbox("대중교통 종류 선택", ["전체"] + st.session_state.transport_types, key="search_t_type")
             
-            # 선택한 대중교통 종류에 따른 정류장 목록 필터링
             if search_transport_type == "전체":
                 filtered_stations_for_search = sorted(list({s for s_list in st.session_state.stations.values() for s in s_list}))
             else:
@@ -205,7 +204,6 @@ def main():
                         
                         direct_routes = []
                         
-                        # 직행 노선 찾기 (선택한 대중교통 종류 제한 반영)
                         for (t_name, r_name), s_list in st.session_state.stations.items():
                             if path_transport_type != "전체" and t_name != path_transport_type:
                                 continue
@@ -231,7 +229,6 @@ def main():
                         else:
                             st.info("🔍 직행 노선이 없습니다. 환승 경로를 탐색합니다...")
 
-                        # 1회 환승 경로 찾기
                         start_route_map = {} 
                         for (t_name, r_name), s_list in st.session_state.stations.items():
                             if path_transport_type != "전체" and t_name != path_transport_type:
@@ -273,7 +270,7 @@ def main():
                                 if route_key not in printed_set:
                                     printed_set.add(route_key)
                                     st.markdown(f"- **1구간:** `[{t1}] {r1}` 탑승 ➔ **[{tr_st}]** 정류장에서 하차 및 환승")
-                                    st.markdown(f"- **2구간:** `[{t2}] {r2}` 환승 탑승 ➔ `[{end_station}]` 도착") # 오타 수정 완료
+                                    st.markdown(f"- **2구간:** `[{t2}] {r2}` 환승 탑승 ➔ `[{end_station}]` 도착")
                                     st.markdown("---")
                         elif not direct_routes:
                             st.warning("⚠️ 선택하신 조건에서 출발지와 도착지를 연결할 수 있는 직행 및 1회 환승 경로를 찾지 못했습니다.")
@@ -319,9 +316,17 @@ def main():
                         continue
 
                     try:
+                        # 곡선 완전 제거(ortho, polyline) 및 정사각형 모양새 유도를 위한 그래프 속성 조정
                         dot = graphviz.Digraph(comment=f'{t_name} Transit Map')
-                        dot.attr(rankdir='LR', splines='polyline', nodesep='1.5', ranksep='1.8', dir='none')
-                        dot.attr('node', fontname='Arial Bold')
+                        dot.attr(
+                            rankdir='TB',          # 위에서 아래로 흐르는 구조 (정사각형 비율 조절 용이)
+                            splines='ortho',       # 꺾은선(직각 선)으로만 고정
+                            nodesep='0.8', 
+                            ranksep='1.0', 
+                            dir='none',
+                            ratio='1.0'            # 전체 외곽 가상선을 정사각형 비율(1.0)에 가깝게 유도
+                        )
+                        dot.attr('node', fontname='Arial Bold', fontsize='20')
 
                         station_to_routes = {}
                         for (tr_name, r_name), s_list in t_stations.items():
@@ -338,12 +343,11 @@ def main():
                             color_idx += 1
 
                         with dot.subgraph(name=f"cluster_legend_{t_name}") as box:
-                            box.attr(label="노선 정보 (선택 가능)", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname='Arial Bold', fontsize='14', fontcolor='#333333')
+                            box.attr(label="노선 정보 (선택 가능)", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname='Arial Bold', fontsize='18', fontcolor='#333333')
                             
                             prev_node = None
                             for (tr_name, r_name), color in route_colors.items():
                                 box_item_id = f"legend_box_{tr_name}_{r_name}"
-                                
                                 box_color = color if (not selected_focus_route or selected_focus_route == r_name) else '#CCCCCC'
                                 
                                 box.node(
@@ -354,7 +358,7 @@ def main():
                                     fillcolor=box_color,
                                     fontcolor='#ffffff',
                                     fontname='Arial Bold',
-                                    fontsize='13',
+                                    fontsize='18',
                                     width='1.5'
                                 )
                                 if prev_node:
@@ -373,6 +377,7 @@ def main():
                                 for s_name in s_list:
                                     all_unique_stations.add(s_name)
 
+                        # 글씨 크기를 대폭 키움 (기존 13 -> 20, 7pt 추가 확대 반영)
                         for s_name in all_unique_stations:
                             r_set = station_to_routes.get(s_name, set())
                             if selected_focus_route:
@@ -384,12 +389,12 @@ def main():
                                 f"station_{t_name}_{s_name}",
                                 label="",
                                 shape='point',
-                                width='0.18' if is_transfer else '0.08',
-                                height='0.18' if is_transfer else '0.08',
+                                width='0.25' if is_transfer else '0.12',
+                                height='0.25' if is_transfer else '0.12',
                                 xlabel=s_name,
                                 fontname='Arial Bold',
                                 fontcolor='#000000' if is_transfer else '#222222',
-                                fontsize='13'
+                                fontsize='20'
                             )
 
                         for (tr_name, r_name), s_list in t_stations.items():
@@ -406,7 +411,7 @@ def main():
                                     f"station_{t_name}_{s_from}", 
                                     f"station_{t_name}_{s_to}", 
                                     color=r_color, 
-                                    penwidth='5', 
+                                    penwidth='6', 
                                     weight='2',
                                     dir='none'
                                 )
