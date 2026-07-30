@@ -65,12 +65,13 @@ def load_step2_data():
         st.session_state.transport_types.append("지하철")
     if "지하철" not in st.session_state.routes:
         st.session_state.routes["지하철"] = []
-    for route in ["1호선", "2호선"]:
+    for route in ["1호선", "2호선", "3호선"]:
         if route not in st.session_state.routes["지하철"]:
             st.session_state.routes["지하철"].append(route)
             
-    st.session_state.stations[("지하철", "1호선")] = ["하나대역", "하나중학교역", "하나시청역", "하나공항역"]
-    st.session_state.stations[("지하철", "2호선")] = ["하나묘지역", "하나하나역", "하나시청역", "하나공항역"]
+    st.session_state.stations[("지하철", "1호선")] = ["하나대역", "하나중학교역", "하나시청역", "하나공항역", "동부종점"]
+    st.session_state.stations[("지하철", "2호선")] = ["하나묘지역", "하나하나역", "하나시청역", "하나공원역", "서부종점"]
+    st.session_state.stations[("지하철", "3호선")] = ["남부역", "하나공항역", "중앙광장", "하나하나역", "북부역"]
     save_data()
 
 def main():
@@ -313,19 +314,20 @@ def main():
                         st.error("⚠️ Graphviz 모듈이 설치되어 있지 않습니다.")
                         continue
 
+                    # =============== [Graphviz 시각화 설정 수정 시작] ===============
                     try:
+                        font_family = "Malgun Gothic, AppleGothic, sans-serif"
+                        
                         dot = graphviz.Digraph(comment=f'{t_name} Transit Map')
                         dot.attr(
                             rankdir='LR',
-                            splines='polyline',
-                            nodesep='1.2',
-                            ranksep='1.5',
-                            concentrate='true',
+                            splines='ortho',  # 지하철 노선도처럼 직각으로 꺾이는 선 사용
+                            nodesep='0.6',    # 노드 간격을 약간 좁힘
+                            ranksep='1.0',
+                            concentrate='false',
                             overlap='false',
-                            dir='none',
-                            ratio='1.0'
+                            pad='0.5'
                         )
-                        dot.attr('node', fontname='Arial Bold', fontsize='20')
 
                         station_to_routes = {}
                         for (tr_name, r_name), s_list in t_stations.items():
@@ -334,6 +336,7 @@ def main():
                                     station_to_routes[s_name] = set()
                                 station_to_routes[s_name].add((tr_name, r_name))
 
+                        # 지하철 노선도에 어울리는 강렬한 원색 계열 컬러 사용
                         colors = ['#0052A4', '#00A84D', '#EF7C1C', '#00A4E1', '#996CAC', '#CD7C2F', '#747F00', '#E6186C']
                         route_colors = {}
                         color_idx = 0
@@ -341,24 +344,26 @@ def main():
                             route_colors[(t_name, r_name)] = colors[color_idx % len(colors)]
                             color_idx += 1
 
+                        # 범례 (Legend)
                         with dot.subgraph(name=f"cluster_legend_{t_name}") as box:
-                            box.attr(label="노선 정보 (선택 가능)", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname='Arial Bold', fontsize='18', fontcolor='#333333')
+                            box.attr(label="노선 색상 안내", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname=font_family, fontsize='14', fontcolor='#333333')
                             
                             prev_node = None
                             for (tr_name, r_name), color in route_colors.items():
                                 box_item_id = f"legend_box_{tr_name}_{r_name}"
-                                box_color = color if (not selected_focus_route or selected_focus_route == r_name) else '#CCCCCC'
+                                box_color = color if (not selected_focus_route or selected_focus_route == r_name) else '#E0E0E0'
                                 
                                 box.node(
                                     box_item_id,
-                                    label=f"  {r_name}  ",
+                                    label=f" {r_name} ",
                                     shape='box',
-                                    style='filled',
+                                    style='filled, rounded',
                                     fillcolor=box_color,
+                                    color=box_color,
                                     fontcolor='#ffffff',
-                                    fontname='Arial Bold',
-                                    fontsize='18',
-                                    width='1.5'
+                                    fontname=font_family,
+                                    fontsize='12',
+                                    height='0.3'
                                 )
                                 if prev_node:
                                     box.edge(prev_node, box_item_id, style='invis')
@@ -376,6 +381,7 @@ def main():
                                 for s_name in s_list:
                                     all_unique_stations.add(s_name)
 
+                        # 정류장 노드 생성 (환승역과 일반역 디자인 차별화)
                         for s_name in all_unique_stations:
                             r_set = station_to_routes.get(s_name, set())
                             if selected_focus_route:
@@ -383,18 +389,48 @@ def main():
                             
                             is_transfer = len(r_set) > 1
                             
-                            dot.node(
-                                f"station_{t_name}_{s_name}",
-                                label="",
-                                shape='point',
-                                width='0.25' if is_transfer else '0.12',
-                                height='0.25' if is_transfer else '0.12',
-                                xlabel=s_name,
-                                fontname='Arial Bold',
-                                fontcolor='#000000' if is_transfer else '#222222',
-                                fontsize='20'
-                            )
+                            # 단일 노선일 경우 해당 노선의 색상을 가져옴
+                            node_border_color = '#000000'
+                            if not is_transfer and len(r_set) == 1:
+                                single_route = list(r_set)[0]
+                                node_border_color = route_colors.get(single_route, '#000000')
+                            
+                            if is_transfer:
+                                # 환승역 디자인 (크고 굵은 검은 테두리)
+                                dot.node(
+                                    f"station_{t_name}_{s_name}",
+                                    label="", 
+                                    shape='circle',
+                                    style='filled',
+                                    fillcolor='#ffffff',
+                                    color='#333333',
+                                    penwidth='3',
+                                    width='0.25',
+                                    height='0.25',
+                                    xlabel=s_name,
+                                    fontname=font_family,
+                                    fontcolor='#000000',
+                                    fontsize='14'
+                                )
+                            else:
+                                # 일반역 디자인 (작고 노선 색상 테두리)
+                                dot.node(
+                                    f"station_{t_name}_{s_name}",
+                                    label="", 
+                                    shape='circle',
+                                    style='filled',
+                                    fillcolor='#ffffff',
+                                    color=node_border_color if not selected_focus_route else '#CCCCCC',
+                                    penwidth='2',
+                                    width='0.12',
+                                    height='0.12',
+                                    xlabel=s_name,
+                                    fontname=font_family,
+                                    fontcolor='#555555',
+                                    fontsize='12'
+                                )
 
+                        # 노선 엣지(선) 생성
                         for (tr_name, r_name), s_list in t_stations.items():
                             if selected_focus_route and r_name != selected_focus_route:
                                 continue
@@ -409,14 +445,14 @@ def main():
                                     f"station_{t_name}_{s_from}", 
                                     f"station_{t_name}_{s_to}", 
                                     color=r_color, 
-                                    penwidth='6', 
-                                    weight='2',
+                                    penwidth='5',  # 선 두께를 키워 지하철 느낌 강조
                                     dir='none'
                                 )
 
                         st.graphviz_chart(dot, use_container_width=True)
                     except Exception as e:
                         st.error(f"노선도 시각화 중 오류가 발생했습니다: {e}")
+                    # =============== [Graphviz 시각화 설정 수정 끝] ===============
 
     else:
         st.sidebar.divider()
@@ -427,9 +463,9 @@ def main():
                 load_sample_data()
                 st.success("샘플 데이터가 생성되었습니다!")
                 st.rerun()
-            if st.button("단계별 맞춤 데이터 로드 (지하철 1·2호선)"):
+            if st.button("단계별 맞춤 데이터 로드 (지하철 1·2·3호선)"):
                 load_step2_data()
-                st.success("지하철 1·2호선 데이터 로드 완료!")
+                st.success("지하철 데이터 로드 완료!")
                 st.rerun()
 
         admin_menu = st.sidebar.radio(
