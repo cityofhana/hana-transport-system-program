@@ -2,6 +2,7 @@
 import os
 import random
 import json
+import heapq  # 환승 최소화 알고리즘(다익스트라)을 위한 모듈 추가
 import streamlit as st
 
 try:
@@ -202,77 +203,100 @@ def main():
                     else:
                         st.markdown(f"### 📍 경로 검색 결과: `{start_station}` ➔ `{end_station}`")
                         
-                        direct_routes = []
+                        # ==========================================
+                        # 무제한 환승 다익스트라 탐색 알고리즘 적용 (최소 환승/최단 정거장)
+                        # ==========================================
+                        graph = {}
                         for (t_name, r_name), s_list in st.session_state.stations.items():
                             if path_transport_type != "전체" and t_name != path_transport_type:
                                 continue
-                            if start_station in s_list and end_station in s_list:
-                                s_idx = s_list.index(start_station)
-                                e_idx = s_list.index(end_station)
-                                if s_idx < e_idx:
-                                    sub_path = s_list[s_idx:e_idx+1]
-                                    direct_routes.append((t_name, r_name, sub_path, "순방향"))
-                                elif s_idx > e_idx:
-                                    sub_path = s_list[e_idx:s_idx+1]
-                                    direct_routes.append((t_name, r_name, s_list[e_idx:s_idx+1], "역방향"))
-
-                        if direct_routes:
-                            st.success("✨ **[직행 경로] 환승 없이 한 번에 갈 수 있는 노선이 있습니다!**")
-                            for t_name, r_name, path, direction in direct_routes:
-                                s_list_target = st.session_state.stations[(t_name, r_name)]
-                                s_i = s_list_target.index(start_station)
-                                e_i = s_list_target.index(end_station)
-                                actual_path = s_list_target[s_i:e_i+1] if s_i < e_i else s_list_target[e_i:e_i+1][::-1]
-                                st.markdown(f"- **[{t_name}] {r_name} 노선 이용** ({direction})")
-                                st.write(f"  👉 경유 경로: `{' ➔ '.join(actual_path)}`")
-                        else:
-                            st.info("🔍 직행 노선이 없습니다. 환승 경로를 탐색합니다...")
-
-                        start_route_map = {} 
-                        for (t_name, r_name), s_list in st.session_state.stations.items():
-                            if path_transport_type != "전체" and t_name != path_transport_type:
+                            for i in range(len(s_list)):
+                                u = s_list[i]
+                                if u not in graph:
+                                    graph[u] = []
+                                # 역방향 연결
+                                if i > 0:
+                                    graph[u].append((s_list[i-1], t_name, r_name))
+                                # 순방향 연결
+                                if i < len(s_list) - 1:
+                                    graph[u].append((s_list[i+1], t_name, r_name))
+                                    
+                        # pq 저장 형식: (비용, 현재 역, 탑승 중인 노선 식별자, 경로 기록 리스트)
+                        # 비용: 환승 시 +1000점(환승 최소화를 위함), 정류장 이동 시 +1점 
+                        pq = []
+                        heapq.heappush(pq, (0, start_station, None, []))
+                        
+                        visited = {} # (정류장, 탑승노선)을 상태로 기록
+                        best_path = None
+                        
+                        while pq:
+                            cost, current_node, current_route, path = heapq.heappop(pq)
+                            
+                            if current_node == end_station:
+                                best_path = path
+                                break
+                                
+                            state = (current_node, current_route)
+                            if state in visited and visited[state] <= cost:
                                 continue
-                            if start_station in s_list:
-                                for s in s_list:
-                                    if s not in start_route_map:
-                                        start_route_map[s] = []
-                                    start_route_map[s].append((t_name, r_name, s_list.index(start_station), s_list.index(s)))
-
-                        end_route_map = {}
-                        for (t_name, r_name), s_list in st.session_state.stations.items():
-                            if path_transport_type != "전체" and t_name != path_transport_type:
-                                continue
-                            if end_station in s_list:
-                                for s in s_list:
-                                    if s not in end_route_map:
-                                        end_route_map[s] = []
-                                    end_route_map[s].append((t_name, r_name, s_list.index(s), s_list.index(end_station)))
-
-                        possible_transfers = set(start_route_map.keys()).intersection(set(end_route_map.keys()))
-                        possible_transfers.discard(start_station)
-                        possible_transfers.discard(end_station)
-
-                        found_transfers = []
-                        for tr_st in possible_transfers:
-                            leg1_options = start_route_map[tr_st]
-                            leg2_options = end_route_map[tr_st]
-
-                            for l1 in leg1_options:
-                                for l2 in leg2_options:
-                                    found_transfers.append((l1[0], l1[1], tr_st, l2[0], l2[1]))
-
-                        if found_transfers:
-                            st.success(f"🔄 **[환승 경로] 1회 환승하여 갈 수 있는 루트를 찾았습니다!**")
-                            printed_set = set()
-                            for t1, r1, tr_st, t2, r2 in found_transfers:
-                                route_key = (t1, r1, tr_st, t2, r2)
-                                if route_key not in printed_set:
-                                    printed_set.add(route_key)
-                                    st.markdown(f"- **1구간:** `[{t1}] {r1}` 탑승 ➔ **[{tr_st}]** 정류장에서 하차 및 환승")
-                                    st.markdown(f"- **2구간:** `[{t2}] {r2}` 환승 탑승 ➔ `[{end_station}]` 도착")
+                            visited[state] = cost
+                            
+                            for next_node, t_name, r_name in graph.get(current_node, []):
+                                route_id = (t_name, r_name)
+                                
+                                is_transfer = 0
+                                if current_route is not None and current_route != route_id:
+                                    is_transfer = 1
+                                    
+                                new_cost = cost + is_transfer * 1000 + 1
+                                new_state = (next_node, route_id)
+                                
+                                if new_state not in visited or visited[new_state] > new_cost:
+                                    new_path = path + [(next_node, t_name, r_name)]
+                                    heapq.heappush(pq, (new_cost, next_node, route_id, new_path))
+                                    
+                        # 결과 출력부
+                        if best_path:
+                            segments = []
+                            curr_route = None
+                            curr_segment = []
+                            
+                            # 경로 그룹핑 (노선별 묶기)
+                            for v, t_name, r_name in best_path:
+                                route_id = (t_name, r_name)
+                                if route_id != curr_route:
+                                    if curr_route is not None:
+                                        segments.append((curr_route, curr_segment))
+                                    curr_route = route_id
+                                    curr_segment = [v]
+                                else:
+                                    curr_segment.append(v)
+                            if curr_route is not None:
+                                segments.append((curr_route, curr_segment))
+                                
+                            transfer_count = len(segments) - 1
+                            
+                            if transfer_count == 0:
+                                st.success("✨ **[직행 경로] 환승 없이 한 번에 갈 수 있는 노선이 있습니다!**")
+                            else:
+                                st.success(f"🔄 **[환승 경로] {transfer_count}회 환승하여 갈 수 있는 최적의 루트를 찾았습니다!**")
+                                
+                            prev_station = start_station
+                            for i, ((t_name, r_name), segment) in enumerate(segments):
+                                end_seg_station = segment[-1]
+                                st.markdown(f"- **{i+1}구간:** `[{t_name}] {r_name}` 탑승 (`{prev_station}` ➔ `{end_seg_station}`)")
+                                
+                                path_str = f"{prev_station} ➔ " + " ➔ ".join(segment)
+                                st.write(f"  👉 경유 경로: `{path_str}`")
+                                
+                                if i < len(segments) - 1:
+                                    st.markdown(f"  *( ⬇️ **{end_seg_station}** 정류장에서 하차 후 다음 노선으로 환승 )*")
                                     st.markdown("---")
-                        elif not direct_routes:
-                            st.warning("⚠️ 선택하신 조건에서 출발지와 도착지를 연결할 수 있는 직행 및 1회 환승 경로를 찾지 못했습니다.")
+                                    
+                                prev_station = end_seg_station
+                        else:
+                            st.warning("⚠️ 선택하신 조건에서 출발지와 도착지를 연결할 수 있는 경로를 찾지 못했습니다.")
+
             else:
                 st.info("경로 검색을 위해 선택한 조건에 최소 2개 이상의 정류장이 등록되어 있어야 합니다.")
 
@@ -314,15 +338,14 @@ def main():
                         st.error("⚠️ Graphviz 모듈이 설치되어 있지 않습니다.")
                         continue
 
-                    # =============== [Graphviz 시각화 설정 수정 시작] ===============
                     try:
                         font_family = "Malgun Gothic, AppleGothic, sans-serif"
                         
                         dot = graphviz.Digraph(comment=f'{t_name} Transit Map')
                         dot.attr(
                             rankdir='LR',
-                            splines='ortho',  # 지하철 노선도처럼 직각으로 꺾이는 선 사용
-                            nodesep='0.6',    # 노드 간격을 약간 좁힘
+                            splines='ortho', 
+                            nodesep='0.6',
                             ranksep='1.0',
                             concentrate='false',
                             overlap='false',
@@ -336,7 +359,6 @@ def main():
                                     station_to_routes[s_name] = set()
                                 station_to_routes[s_name].add((tr_name, r_name))
 
-                        # 지하철 노선도에 어울리는 강렬한 원색 계열 컬러 사용
                         colors = ['#0052A4', '#00A84D', '#EF7C1C', '#00A4E1', '#996CAC', '#CD7C2F', '#747F00', '#E6186C']
                         route_colors = {}
                         color_idx = 0
@@ -344,7 +366,6 @@ def main():
                             route_colors[(t_name, r_name)] = colors[color_idx % len(colors)]
                             color_idx += 1
 
-                        # 범례 (Legend)
                         with dot.subgraph(name=f"cluster_legend_{t_name}") as box:
                             box.attr(label="노선 색상 안내", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname=font_family, fontsize='14', fontcolor='#333333')
                             
@@ -381,7 +402,6 @@ def main():
                                 for s_name in s_list:
                                     all_unique_stations.add(s_name)
 
-                        # 정류장 노드 생성 (환승역과 일반역 디자인 차별화)
                         for s_name in all_unique_stations:
                             r_set = station_to_routes.get(s_name, set())
                             if selected_focus_route:
@@ -389,14 +409,12 @@ def main():
                             
                             is_transfer = len(r_set) > 1
                             
-                            # 단일 노선일 경우 해당 노선의 색상을 가져옴
                             node_border_color = '#000000'
                             if not is_transfer and len(r_set) == 1:
                                 single_route = list(r_set)[0]
                                 node_border_color = route_colors.get(single_route, '#000000')
                             
                             if is_transfer:
-                                # 환승역 디자인 (크고 굵은 검은 테두리)
                                 dot.node(
                                     f"station_{t_name}_{s_name}",
                                     label="", 
@@ -413,7 +431,6 @@ def main():
                                     fontsize='14'
                                 )
                             else:
-                                # 일반역 디자인 (작고 노선 색상 테두리)
                                 dot.node(
                                     f"station_{t_name}_{s_name}",
                                     label="", 
@@ -430,7 +447,6 @@ def main():
                                     fontsize='12'
                                 )
 
-                        # 노선 엣지(선) 생성
                         for (tr_name, r_name), s_list in t_stations.items():
                             if selected_focus_route and r_name != selected_focus_route:
                                 continue
@@ -445,14 +461,13 @@ def main():
                                     f"station_{t_name}_{s_from}", 
                                     f"station_{t_name}_{s_to}", 
                                     color=r_color, 
-                                    penwidth='5',  # 선 두께를 키워 지하철 느낌 강조
+                                    penwidth='5', 
                                     dir='none'
                                 )
 
                         st.graphviz_chart(dot, use_container_width=True)
                     except Exception as e:
                         st.error(f"노선도 시각화 중 오류가 발생했습니다: {e}")
-                    # =============== [Graphviz 시각화 설정 수정 끝] ===============
 
     else:
         st.sidebar.divider()
