@@ -136,46 +136,66 @@ def main():
 
     if user_mode == "이용자 모드 (노선도 조회)":
         st.subheader("🎨 하나자치시 대중교통 노선도 조회")
-        st.info("💡 이용자 모드에서는 등록된 대중교통 노선도 조회, 정류장별 경유 노선 검색, 그리고 출발·도착 정류장 기반 경로 안내를 이용할 수 있습니다.")
+        st.info("💡 이용자 모드에서는 대중교통 종류별 정류장 검색 및 출발·도착 경로 안내를 이용할 수 있습니다.")
 
         if not st.session_state.transport_types or not st.session_state.stations:
             st.warning("등록된 대중교통 또는 노선 데이터가 없습니다.")
         else:
-            all_available_stations = sorted(list({s for s_list in st.session_state.stations.values() for s in s_list}))
-
-            # 1. 정류장별 경유 노선 검색 섹션
+            # 1. 정류장별 경유 노선 검색 (대중교통 종류 선택 추가)
             st.markdown("---")
             st.subheader("🔍 정류장별 경유 노선 검색")
             
-            if all_available_stations:
-                selected_search_station = st.selectbox("검색할 정류장을 선택하세요", all_available_stations, key="single_search_station")
-                
-                if selected_search_station:
-                    matched_routes = []
-                    for (t_name, r_name), s_list in st.session_state.stations.items():
-                        if selected_search_station in s_list:
-                            idx = s_list.index(selected_search_station)
-                            matched_routes.append((t_name, r_name, idx + 1, len(s_list)))
-                    
-                    if matched_routes:
-                        st.success(f"🚏 **'{selected_search_station}'** 정류장을 경유하는 노선 정보입니다:")
-                        for t_name, r_name, order_idx, total_cnt in matched_routes:
-                            st.markdown(f"- **[{t_name}] {r_name}** 노선 (해당 노선의 **{order_idx}번째** 정류장 / 총 {total_cnt}개 정류장)")
-                    else:
-                        st.info("경유하는 노선이 없습니다.")
+            col_s1, col_s2 = st.columns(2)
+            with col_s1:
+                search_transport_type = st.selectbox("대중교통 종류 선택", ["전체"] + st.session_state.transport_types, key="search_t_type")
+            
+            # 선택한 대중교통 종류에 따른 정류장 목록 필터링
+            if search_transport_type == "전체":
+                filtered_stations_for_search = sorted(list({s for s_list in st.session_state.stations.values() for s in s_list}))
+            else:
+                filtered_stations_for_search = sorted(list({s for (t, r), s_list in st.session_state.stations.items() if t == search_transport_type for s in s_list}))
 
-            # 2. 출발-도착 정류장 경로 안내 섹션 추가
+            with col_s2:
+                if filtered_stations_for_search:
+                    selected_search_station = st.selectbox("정류장 선택", filtered_stations_for_search, key="single_search_station")
+                else:
+                    selected_search_station = None
+                    st.warning("해당 조건에 정류장이 없습니다.")
+
+            if selected_search_station:
+                matched_routes = []
+                for (t_name, r_name), s_list in st.session_state.stations.items():
+                    if search_transport_type != "전체" and t_name != search_transport_type:
+                        continue
+                    if selected_search_station in s_list:
+                        idx = s_list.index(selected_search_station)
+                        matched_routes.append((t_name, r_name, idx + 1, len(s_list)))
+                
+                if matched_routes:
+                    st.success(f"🚏 **'{selected_search_station}'** 정류장을 경유하는 노선 정보입니다:")
+                    for t_name, r_name, order_idx, total_cnt in matched_routes:
+                        st.markdown(f"- **[{t_name}] {r_name}** 노선 (해당 노선의 **{order_idx}번째** 정류장 / 총 {total_cnt}개 정류장)")
+                else:
+                    st.info("경유하는 노선이 없습니다.")
+
+            # 2. 출발-도착 정류장 경로 안내 (대중교통 종류 선택 추가)
             st.markdown("---")
             st.subheader("🧭 출발지 & 도착지 경로 안내")
 
-            if len(all_available_stations) >= 2:
+            path_transport_type = st.selectbox("경로 검색할 대중교통 종류 선택", ["전체"] + st.session_state.transport_types, key="path_t_type")
+
+            if path_transport_type == "전체":
+                path_available_stations = sorted(list({s for s_list in st.session_state.stations.values() for s in s_list}))
+            else:
+                path_available_stations = sorted(list({s for (t, r), s_list in st.session_state.stations.items() if t == path_transport_type for s in s_list}))
+
+            if len(path_available_stations) >= 2:
                 col1, col2 = st.columns(2)
                 with col1:
-                    start_station = st.selectbox("출발 정류장 선택", all_available_stations, key="path_start")
+                    start_station = st.selectbox("출발 정류장 선택", path_available_stations, key="path_start")
                 with col2:
-                    # 기본값을 출발지와 다르게 설정하기 위한 인덱스 조절
-                    default_end_idx = 1 if len(all_available_stations) > 1 else 0
-                    end_station = st.selectbox("도착 정류장 선택", all_available_stations, index=default_end_idx, key="path_end")
+                    default_end_idx = 1 if len(path_available_stations) > 1 else 0
+                    end_station = st.selectbox("도착 정류장 선택", path_available_stations, index=default_end_idx, key="path_end")
 
                 if st.button("경로 검색하기", type="primary"):
                     if start_station == end_station:
@@ -184,33 +204,38 @@ def main():
                         st.markdown(f"### 📍 경로 검색 결과: `{start_station}` ➔ `{end_station}`")
                         
                         direct_routes = []
-                        transfer_routes = []
-
-                        # 1단계: 직행(환승 없음) 노선 찾기
+                        
+                        # 직행 노선 찾기 (선택한 대중교통 종류 제한 반영)
                         for (t_name, r_name), s_list in st.session_state.stations.items():
+                            if path_transport_type != "전체" and t_name != path_transport_type:
+                                continue
                             if start_station in s_list and end_station in s_list:
                                 s_idx = s_list.index(start_station)
                                 e_idx = s_list.index(end_station)
-                                # 방향성 확인 (순방향 또는 역방향 모두 허용하거나 순서 체크)
                                 if s_idx < e_idx:
                                     sub_path = s_list[s_idx:e_idx+1]
                                     direct_routes.append((t_name, r_name, sub_path, "순방향"))
                                 elif s_idx > e_idx:
-                                    sub_path = s_list[e_idx:s_idx+1] # 역방향 안내용
+                                    sub_path = s_list[e_idx:s_idx+1]
                                     direct_routes.append((t_name, r_name, s_list[e_idx:s_idx+1], "역방향"))
 
                         if direct_routes:
                             st.success("✨ **[직행 경로] 환승 없이 한 번에 갈 수 있는 노선이 있습니다!**")
                             for t_name, r_name, path, direction in direct_routes:
+                                s_list_target = st.session_state.stations[(t_name, r_name)]
+                                s_i = s_list_target.index(start_station)
+                                e_i = s_list_target.index(end_station)
+                                actual_path = s_list_target[s_i:e_i+1] if s_i < e_i else s_list_target[e_i:s_i+1][::-1]
                                 st.markdown(f"- **[{t_name}] {r_name} 노선 이용** ({direction})")
-                                st.write(f"  👉 경유 경로: `{' ➔ '.join(s_list[s_list.index(start_station):s_list.index(end_station)+1] if s_list.index(start_station) < s_list.index(end_station) else s_list[s_list.index(end_station):s_list.index(start_station)+1][::-1])}`")
+                                st.write(f"  👉 경유 경로: `{' ➔ '.join(actual_path)}`")
                         else:
                             st.info("🔍 직행 노선이 없습니다. 환승 경로를 탐색합니다...")
 
-                        # 2단계: 1회 환승 경로 찾기
-                        # 출발지를 포함하는 노선들과 도착지를 포함하는 노선들 간에 공통 정류장(환승역)이 있는지 확인
-                        start_route_map = {} # station -> list of (t_name, r_name, idx)
+                        # 1회 환승 경로 찾기
+                        start_route_map = {} 
                         for (t_name, r_name), s_list in st.session_state.stations.items():
+                            if path_transport_type != "전체" and t_name != path_transport_type:
+                                continue
                             if start_station in s_list:
                                 for s in s_list:
                                     if s not in start_route_map:
@@ -219,44 +244,41 @@ def main():
 
                         end_route_map = {}
                         for (t_name, r_name), s_list in st.session_state.stations.items():
+                            if path_transport_type != "전체" and t_name != path_transport_type:
+                                continue
                             if end_station in s_list:
                                 for s in s_list:
                                     if s not in end_route_map:
                                         end_route_map[s] = []
                                     end_route_map[s].append((t_name, r_name, s_list.index(s), s_list.index(end_station)))
 
-                        # 공통 정류장(환승역) 찾기 (출발지와 도착지 제외)
                         possible_transfers = set(start_route_map.keys()).intersection(set(end_route_map.keys()))
                         possible_transfers.discard(start_station)
                         possible_transfers.discard(end_station)
 
                         found_transfers = []
                         for tr_st in possible_transfers:
-                            # 출발지 -> 환승역 루트들
                             leg1_options = start_route_map[tr_st]
-                            # 환승역 -> 도착지 루트들
                             leg2_options = end_route_map[tr_st]
 
                             for l1 in leg1_options:
                                 for l2 in leg2_options:
-                                    # 서로 다른 노선이거나, 혹은 환승이 성립되는 경우
                                     found_transfers.append((l1[0], l1[1], tr_st, l2[0], l2[1]))
 
                         if found_transfers:
                             st.success(f"🔄 **[환승 경로] 1회 환승하여 갈 수 있는 루트를 찾았습니다!**")
-                            # 중복 제거를 위해 set 활용 또는 단순 출력
                             printed_set = set()
                             for t1, r1, tr_st, t2, r2 in found_transfers:
                                 route_key = (t1, r1, tr_st, t2, r2)
                                 if route_key not in printed_set:
                                     printed_set.add(route_key)
                                     st.markdown(f"- **1구간:** `[{t1}] {r1}` 탑승 ➔ **[{tr_st}]** 정류장에서 하차 및 환승")
-                                    st.markdown(f"- **2구간:** `[{t2}] {r2}` 환승 탑승 ➔ `[{end_station}]` 도착착")
+                                    st.markdown(f"- **2구간:** `[{t2}] {r2}` 환승 탑승 ➔ `[{end_station}]` 도착") # 오타 수정 완료
                                     st.markdown("---")
                         elif not direct_routes:
-                            st.warning("⚠️ 입력하신 출발지와 도착지를 연결할 수 있는 직행 및 1회 환승 경로를 찾지 못했습니다.")
+                            st.warning("⚠️ 선택하신 조건에서 출발지와 도착지를 연결할 수 있는 직행 및 1회 환승 경로를 찾지 못했습니다.")
             else:
-                st.info("경로 검색을 위해 최소 2개 이상의 정류장이 등록되어 있어야 합니다.")
+                st.info("경로 검색을 위해 선택한 조건에 최소 2개 이상의 정류장이 등록되어 있어야 합니다.")
 
             st.markdown("---")
             tabs = st.tabs(st.session_state.transport_types)
