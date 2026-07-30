@@ -136,11 +136,38 @@ def main():
 
     if user_mode == "이용자 모드 (노선도 조회)":
         st.subheader("🎨 하나자치시 대중교통 노선도 조회")
-        st.info("💡 이용자 모드에서는 등록된 대중교통 노선도와 정류장 정보를 조회할 수 있습니다.")
+        st.info("💡 이용자 모드에서는 등록된 대중교통 노선도와 정류장 정보를 조회하고, 정류장별 경유 노선을 검색할 수 있습니다.")
 
         if not st.session_state.transport_types or not st.session_state.stations:
             st.warning("등록된 대중교통 또는 노선 데이터가 없습니다.")
         else:
+            # 상단에 정류장 검색 기능 추가
+            st.markdown("---")
+            st.subheader("🔍 정류장별 경유 노선 검색")
+            
+            # 모든 정류장 목록 수집
+            all_available_stations = sorted(list({s for s_list in st.session_state.stations.values() for s in s_list}))
+            
+            if all_available_stations:
+                selected_search_station = st.selectbox("검색할 정류장을 선택하세요", all_available_stations)
+                
+                if selected_search_station:
+                    matched_routes = []
+                    for (t_name, r_name), s_list in st.session_state.stations.items():
+                        if selected_search_station in s_list:
+                            idx = s_list.index(selected_search_station)
+                            matched_routes.append((t_name, r_name, idx + 1, len(s_list)))
+                    
+                    if matched_routes:
+                        st.success(f"🚏 **'{selected_search_station}'** 정류장을 경유하는 노선 정보입니다:")
+                        for t_name, r_name, order_idx, total_cnt in matched_routes:
+                            st.markdown(f"- **[{t_name}] {r_name}** 노선 (해당 노선의 **{order_idx}번째** 정류장 / 총 {total_cnt}개 정류장)")
+                    else:
+                        st.info("경유하는 노선이 없습니다.")
+            else:
+                st.info("등록된 정류장이 없습니다.")
+
+            st.markdown("---")
             tabs = st.tabs(st.session_state.transport_types)
 
             for tab, t_name in zip(tabs, st.session_state.transport_types):
@@ -181,7 +208,6 @@ def main():
                     try:
                         dot = graphviz.Digraph(comment=f'{t_name} Transit Map')
                         dot.attr(rankdir='LR', splines='polyline', nodesep='1.5', ranksep='1.8', dir='none')
-                        # 기본 폰트를 굵은 Arial로 지정
                         dot.attr('node', fontname='Arial Bold')
 
                         station_to_routes = {}
@@ -198,7 +224,6 @@ def main():
                             route_colors[(t_name, r_name)] = colors[color_idx % len(colors)]
                             color_idx += 1
 
-                        # 범례 박스 생성 (글자 크기 키우고 볼드체 적용)
                         with dot.subgraph(name=f"cluster_legend_{t_name}") as box:
                             box.attr(label="노선 정보 (선택 가능)", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname='Arial Bold', fontsize='14', fontcolor='#333333')
                             
@@ -242,7 +267,6 @@ def main():
                             
                             is_transfer = len(r_set) > 1
                             
-                            # 정류장 이름(xlabel) 글자 크기를 키우고 진하게(볼드체) 설정
                             dot.node(
                                 f"station_{t_name}_{s_name}",
                                 label="",
