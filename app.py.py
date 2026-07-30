@@ -154,7 +154,6 @@ def main():
                         st.info(f"'{t_name}'에 등록된 노선 또는 정류장 데이터가 없습니다.")
                         continue
 
-                    # 노선 선택 필터 추가 (특정 노선만 강조 또는 단독 보기용)
                     filter_option = st.radio(
                         f"[{t_name}] 조회 방식 선택",
                         ["전체 노선 보기"] + [f"'{r}' 노선만 집중 보기" for r in t_routes],
@@ -182,7 +181,8 @@ def main():
                     try:
                         dot = graphviz.Digraph(comment=f'{t_name} Transit Map')
                         dot.attr(rankdir='LR', splines='polyline', nodesep='1.5', ranksep='1.8', dir='none')
-                        dot.attr('node', fontname='Arial', fontsize='10')
+                        # 기본 폰트를 굵은 Arial로 지정
+                        dot.attr('node', fontname='Arial Bold')
 
                         station_to_routes = {}
                         for (tr_name, r_name), s_list in t_stations.items():
@@ -198,15 +198,14 @@ def main():
                             route_colors[(t_name, r_name)] = colors[color_idx % len(colors)]
                             color_idx += 1
 
-                        # 범례 박스 생성
+                        # 범례 박스 생성 (글자 크기 키우고 볼드체 적용)
                         with dot.subgraph(name=f"cluster_legend_{t_name}") as box:
-                            box.attr(label="노선 정보 (선택 가능)", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname='Arial', fontsize='12', fontcolor='#333333')
+                            box.attr(label="노선 정보 (선택 가능)", style='rounded,filled', color='#f8f9fa', fillcolor='#ffffff', fontname='Arial Bold', fontsize='14', fontcolor='#333333')
                             
                             prev_node = None
                             for (tr_name, r_name), color in route_colors.items():
                                 box_item_id = f"legend_box_{tr_name}_{r_name}"
                                 
-                                # 집중 보기 노선이 아닐 경우 범례 색상을 흐릿하게 처리
                                 box_color = color if (not selected_focus_route or selected_focus_route == r_name) else '#CCCCCC'
                                 
                                 box.node(
@@ -216,8 +215,8 @@ def main():
                                     style='filled',
                                     fillcolor=box_color,
                                     fontcolor='#ffffff',
-                                    fontname='Arial',
-                                    fontsize='11',
+                                    fontname='Arial Bold',
+                                    fontsize='13',
                                     width='1.5'
                                 )
                                 if prev_node:
@@ -231,7 +230,6 @@ def main():
                             for s_name in s_list:
                                 all_unique_stations.add(s_name)
 
-                        # 집중 보기가 아닐 때는 모든 정류장 포함
                         if not selected_focus_route:
                             for s_list in t_stations.values():
                                 for s_name in s_list:
@@ -244,6 +242,7 @@ def main():
                             
                             is_transfer = len(r_set) > 1
                             
+                            # 정류장 이름(xlabel) 글자 크기를 키우고 진하게(볼드체) 설정
                             dot.node(
                                 f"station_{t_name}_{s_name}",
                                 label="",
@@ -251,8 +250,9 @@ def main():
                                 width='0.18' if is_transfer else '0.08',
                                 height='0.18' if is_transfer else '0.08',
                                 xlabel=s_name,
-                                fontcolor='#000000' if is_transfer else '#333333',
-                                fontsize='10'
+                                fontname='Arial Bold',
+                                fontcolor='#000000' if is_transfer else '#222222',
+                                fontsize='13'
                             )
 
                         for (tr_name, r_name), s_list in t_stations.items():
@@ -269,7 +269,7 @@ def main():
                                     f"station_{t_name}_{s_from}", 
                                     f"station_{t_name}_{s_to}", 
                                     color=r_color, 
-                                    penwidth='4', 
+                                    penwidth='5', 
                                     weight='2',
                                     dir='none'
                                 )
